@@ -54,3 +54,12 @@ export const dbSchemaV5 = {
   ...dbSchemaV4,
   users: '++id',
 };
+
+// ************************************** //
+// ******* Version 6 - 2024-02-27 ******* //
+// ************************************** //
+// - Added uuid to `users` table
+export const dbSchemaV6 = {
+  ...dbSchemaV5,
+  users: '++id, uuid',
+};

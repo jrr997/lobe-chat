@@ -1,6 +1,9 @@
+import { traceClient } from '@/app/api/chat/[provider]/traceClient';
+import { getTracePayload } from '@/utils/trace';
 import { getPreferredRegion } from '@/app/api/config';
 import { createErrorResponse } from '@/app/api/errorResponse';
 import { LOBE_CHAT_AUTH_HEADER, OAUTH_AUTHORIZED } from '@/const/auth';
+import { LOBE_CHAT_TRACE_HEADER, LOBE_CHAT_TRACE_ID } from '@/const/trace';
 import {
   AgentInitErrorPayload,
   AgentRuntimeError,
@@ -54,7 +57,50 @@ export const POST = async (req: Request, { params }: { params: { provider: strin
   try {
     const payload = (await req.json()) as ChatStreamPayload;
 
-    return await agentRuntime.chat(payload);
+    // create a trace to monitor the completion
+    const traceHeader = getTracePayload(req.headers.get(LOBE_CHAT_TRACE_HEADER));
+
+    const trace = traceClient.createTrace({
+      input: payload.messages,
+      metadata: { provider },
+      name: traceHeader?.traceType,
+      sessionId: `${traceHeader?.sessionId || 'unknown'}@${traceHeader?.topicId || 'start'}`,
+      userId: traceHeader?.userId,
+    });
+
+    let startTime: Date;
+    return await agentRuntime.chat(payload, {
+      callback: {
+        experimental_onToolCall: async (toolCallPayload) => {
+          console.log('toolCallPayload:', toolCallPayload);
+          trace?.update({ tags: ['Function Call'] });
+        },
+        onCompletion: async (completion) => {
+          const { messages, model, tools, ...parameters } = payload;
+          trace?.generation({
+            endTime: new Date(),
+            input: messages,
+            metadata: { provider, tools },
+            model,
+            modelParameters: parameters as any,
+            name: `Chat Completion:(${model})`,
+            output: completion,
+            startTime,
+          });
+
+          trace?.update({ output: completion });
+        },
+        onFinal: async () => {
+          await traceClient.shutdownAsync();
+        },
+        onStart: () => {
+          startTime = new Date();
+        },
+      },
+      headers: {
+        [LOBE_CHAT_TRACE_ID]: trace?.id,
+      },
+    });
   } catch (e) {
     const { errorType, provider, error: errorContent, ...res } = e as ChatCompletionErrorPayload;
 

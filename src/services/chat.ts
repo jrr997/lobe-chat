@@ -3,6 +3,7 @@ import { produce } from 'immer';
 import { merge } from 'lodash-es';
 
 import { DEFAULT_AGENT_CONFIG } from '@/const/settings';
+import { LOBE_CHAT_TRACE_HEADER, TracePayload, TraceType } from '@/const/trace';
 import { ModelProvider } from '@/libs/agent-runtime';
 import { filesSelectors, useFileStore } from '@/store/file';
 import { useGlobalStore } from '@/store/global';
@@ -12,7 +13,8 @@ import { pluginSelectors, toolSelectors } from '@/store/tool/selectors';
 import { ChatMessage } from '@/types/message';
 import type { ChatStreamPayload, OpenAIChatMessage } from '@/types/openai/chat';
 import { UserMessageContentPart } from '@/types/openai/chat';
-import { fetchAIFactory, getMessageError } from '@/utils/fetch';
+import { fetchSSE, getMessageError } from '@/utils/fetch';
+import { createTracePayload } from '@/utils/trace';
 
 import { createHeaderWithAuth } from './_auth';
 import { createHeaderWithOpenAI } from './_header';
@@ -20,16 +22,40 @@ import { API_ENDPOINTS } from './_url';
 
 interface FetchOptions {
   signal?: AbortSignal | undefined;
+  trace?: TracePayload;
 }
 
 interface GetChatCompletionPayload extends Partial<Omit<ChatStreamPayload, 'messages'>> {
   messages: ChatMessage[];
 }
 
+interface FetchAITaskResultParams {
+  abortController?: AbortController;
+  /**
+   * 错误处理函数
+   */
+  onError?: (e: Error, rawError?: any) => void;
+  onFinish?: (text: string) => Promise<void>;
+  /**
+   * 加载状态变化处理函数
+   * @param loading - 是否处于加载状态
+   */
+  onLoadingChange?: (loading: boolean) => void;
+  /**
+   * 消息处理函数
+   * @param text - 消息内容
+   */
+  onMessageHandle?: (text: string) => void;
+  /**
+   * 请求对象
+   */
+  params: Partial<ChatStreamPayload>;
+}
+
 class ChatService {
   createAssistantMessage = async (
     { plugins: enabledPlugins, messages, ...params }: GetChatCompletionPayload,
-    options?: FetchOptions,
+    { signal, trace }: FetchOptions = {},
   ) => {
     const payload = merge(
       {
@@ -62,10 +88,13 @@ class ChatService {
 
     const tools = shouldUseTools ? filterTools : undefined;
 
-    return this.getChatCompletion({ ...params, messages: oaiMessages, tools }, options);
+    return this.getChatCompletion({ ...params, messages: oaiMessages, tools }, { signal, trace });
   };
 
-  getChatCompletion = async (params: Partial<ChatStreamPayload>, options?: FetchOptions) => {
+  getChatCompletion = async (
+    params: Partial<ChatStreamPayload>,
+    { trace, signal }: FetchOptions,
+  ) => {
     const { provider = ModelProvider.OpenAI, ...res } = params;
     const payload = merge(
       {
@@ -76,8 +105,18 @@ class ChatService {
       res,
     );
 
+    const traceHeader = createTracePayload({
+      sessionId: trace?.sessionId,
+      topicId: trace?.topicId,
+      traceType: trace?.traceType,
+      userId: useGlobalStore.getState().userId,
+    });
+
     const headers = await createHeaderWithAuth({
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        [LOBE_CHAT_TRACE_HEADER]: traceHeader,
+      },
       provider,
     });
 
@@ -85,7 +124,7 @@ class ChatService {
       body: JSON.stringify(payload),
       headers,
       method: 'POST',
-      signal: options?.signal,
+      signal,
     });
   };
 
@@ -117,7 +156,43 @@ class ChatService {
     return await res.text();
   };
 
-  fetchPresetTaskResult = fetchAIFactory(this.getChatCompletion);
+  fetchPresetTaskResult = async ({
+    params,
+    onMessageHandle,
+    onFinish,
+    onError,
+    onLoadingChange,
+    abortController,
+  }: FetchAITaskResultParams) => {
+    const errorHandle = (error: Error, errorContent?: any) => {
+      onLoadingChange?.(false);
+      if (abortController?.signal.aborted) {
+        return;
+      }
+      onError?.(error, errorContent);
+    };
+
+    onLoadingChange?.(true);
+
+    const data = await fetchSSE(
+      () =>
+        this.getChatCompletion(params, {
+          signal: abortController?.signal,
+          trace: { traceType: TraceType.SystemChain, userId: useGlobalStore.getState().userId },
+        }),
+      {
+        onErrorHandle: (error) => {
+          errorHandle(new Error(error.message), error);
+        },
+        onFinish,
+        onMessageHandle,
+      },
+    ).catch(errorHandle);
+
+    onLoadingChange?.(false);
+
+    return await data?.text();
+  };
 
   private processMessages = ({
     messages,
