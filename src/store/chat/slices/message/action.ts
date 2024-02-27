@@ -6,7 +6,7 @@ import useSWR, { SWRResponse, mutate } from 'swr';
 import { StateCreator } from 'zustand/vanilla';
 
 import { LOADING_FLAT, isFunctionMessageAtStart, testFunctionMessageAtEnd } from '@/const/message';
-import { TraceType } from '@/const/trace';
+import { TraceNameMap } from '@/const/trace';
 import { CreateMessageParams } from '@/database/models/message';
 import { chatService } from '@/services/chat';
 import { messageService } from '@/services/message';
@@ -388,7 +388,7 @@ export const chatMessage: StateCreator<
           trace: {
             sessionId: get().activeId,
             topicId: get().activeTopicId,
-            traceType: TraceType.UserChat,
+            traceName: TraceNameMap.UserChat,
           },
         },
       );

@@ -4,6 +4,7 @@ import { StateCreator } from 'zustand/vanilla';
 
 import { chainLangDetect } from '@/chains/langDetect';
 import { chainTranslate } from '@/chains/translate';
+import { TraceNameMap, TracePayload } from '@/const/trace';
 import { supportLocales } from '@/locales/resources';
 import { chatService } from '@/services/chat';
 import { fileService } from '@/services/file';
@@ -24,6 +25,7 @@ export interface ChatEnhanceAction {
   clearTTS: (id: string) => Promise<void>;
   clearTranslate: (id: string) => Promise<void>;
   generateImageFromPrompts: (items: DallEImageItem[], id: string) => Promise<void>;
+  getCurrentTracePayload: (data: Partial<TracePayload>) => TracePayload;
   text2image: (id: string, data: DallEImageItem[]) => Promise<void>;
   toggleDallEImageLoading: (key: string, value: boolean) => void;
   translateMessage: (id: string, targetLang: string) => Promise<void>;
@@ -82,6 +84,11 @@ export const chatEnhance: StateCreator<
         });
     });
   },
+  getCurrentTracePayload: (data) => ({
+    sessionId: get().activeId,
+    topicId: get().activeTopicId,
+    ...data,
+  }),
   text2image: async (id, data) => {
     // const isAutoGen = settingsSelectors.isDalleAutoGenerating(useGlobalStore.getState());
     // if (!isAutoGen) return;
@@ -113,6 +120,7 @@ export const chatEnhance: StateCreator<
     chatService
       .fetchPresetTaskResult({
         params: chainLangDetect(message.content),
+        trace: get().getCurrentTracePayload({ traceName: TraceNameMap.LanguageDetect }),
       })
       .then(async (data) => {
         if (data && supportLocales.includes(data)) from = data;
@@ -134,6 +142,7 @@ export const chatEnhance: StateCreator<
         });
       },
       params: chainTranslate(message.content, targetLang),
+      trace: get().getCurrentTracePayload({ traceName: TraceNameMap.Translator }),
     });
 
     await updateMessageTranslate(id, { content, from, to: targetLang });

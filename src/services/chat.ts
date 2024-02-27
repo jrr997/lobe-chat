@@ -3,7 +3,7 @@ import { produce } from 'immer';
 import { merge } from 'lodash-es';
 
 import { DEFAULT_AGENT_CONFIG } from '@/const/settings';
-import { LOBE_CHAT_TRACE_HEADER, TracePayload, TraceType } from '@/const/trace';
+import { LOBE_CHAT_TRACE_HEADER, TracePayload, TraceTagType } from '@/const/trace';
 import { ModelProvider } from '@/libs/agent-runtime';
 import { filesSelectors, useFileStore } from '@/store/file';
 import { useGlobalStore } from '@/store/global';
@@ -50,6 +50,7 @@ interface FetchAITaskResultParams {
    * 请求对象
    */
   params: Partial<ChatStreamPayload>;
+  trace?: TracePayload;
 }
 
 class ChatService {
@@ -106,9 +107,8 @@ class ChatService {
     );
 
     const traceHeader = createTracePayload({
-      sessionId: trace?.sessionId,
-      topicId: trace?.topicId,
-      traceType: trace?.traceType,
+      ...trace,
+      tags: [TraceTagType.UserChat],
       userId: useGlobalStore.getState().userId,
     });
 
@@ -163,6 +163,7 @@ class ChatService {
     onError,
     onLoadingChange,
     abortController,
+    trace,
   }: FetchAITaskResultParams) => {
     const errorHandle = (error: Error, errorContent?: any) => {
       onLoadingChange?.(false);
@@ -178,7 +179,11 @@ class ChatService {
       () =>
         this.getChatCompletion(params, {
           signal: abortController?.signal,
-          trace: { traceType: TraceType.SystemChain, userId: useGlobalStore.getState().userId },
+          trace: {
+            tags: [TraceTagType.SystemChain],
+            ...trace,
+            userId: useGlobalStore.getState().userId,
+          },
         }),
       {
         onErrorHandle: (error) => {

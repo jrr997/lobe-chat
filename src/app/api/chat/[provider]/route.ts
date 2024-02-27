@@ -1,5 +1,4 @@
 import { traceClient } from '@/app/api/chat/[provider]/traceClient';
-import { getTracePayload } from '@/utils/trace';
 import { getPreferredRegion } from '@/app/api/config';
 import { createErrorResponse } from '@/app/api/errorResponse';
 import { LOBE_CHAT_AUTH_HEADER, OAUTH_AUTHORIZED } from '@/const/auth';
@@ -12,6 +11,7 @@ import {
 } from '@/libs/agent-runtime';
 import { ChatErrorType } from '@/types/fetch';
 import { ChatStreamPayload } from '@/types/openai/chat';
+import { getTracePayload } from '@/utils/trace';
 
 import { checkAuthMethod, getJWTPayload } from '../auth';
 import AgentRuntime from './agentRuntime';
@@ -58,14 +58,15 @@ export const POST = async (req: Request, { params }: { params: { provider: strin
     const payload = (await req.json()) as ChatStreamPayload;
 
     // create a trace to monitor the completion
-    const traceHeader = getTracePayload(req.headers.get(LOBE_CHAT_TRACE_HEADER));
+    const tracePayload = getTracePayload(req.headers.get(LOBE_CHAT_TRACE_HEADER));
 
     const trace = traceClient.createTrace({
       input: payload.messages,
       metadata: { provider },
-      name: traceHeader?.traceType,
-      sessionId: `${traceHeader?.sessionId || 'unknown'}@${traceHeader?.topicId || 'start'}`,
-      userId: traceHeader?.userId,
+      name: tracePayload?.traceName,
+      sessionId: `${tracePayload?.sessionId || 'unknown'}@${tracePayload?.topicId || 'start'}`,
+      tags: tracePayload?.tags,
+      userId: tracePayload?.userId,
     });
 
     let startTime: Date;
@@ -83,7 +84,7 @@ export const POST = async (req: Request, { params }: { params: { provider: strin
             metadata: { provider, tools },
             model,
             modelParameters: parameters as any,
-            name: `Chat Completion:(${model})`,
+            name: `Chat Completion(${provider})`,
             output: completion,
             startTime,
           });
