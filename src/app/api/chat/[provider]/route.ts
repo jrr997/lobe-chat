@@ -1,14 +1,14 @@
-import { traceClient } from '@/app/api/chat/[provider]/traceClient';
 import { getPreferredRegion } from '@/app/api/config';
 import { createErrorResponse } from '@/app/api/errorResponse';
 import { LOBE_CHAT_AUTH_HEADER, OAUTH_AUTHORIZED } from '@/const/auth';
-import { LOBE_CHAT_TRACE_HEADER, LOBE_CHAT_TRACE_ID } from '@/const/trace';
+import { LOBE_CHAT_TRACE_ID, TraceTagType } from '@/const/trace';
 import {
   AgentInitErrorPayload,
   AgentRuntimeError,
   ChatCompletionErrorPayload,
   ILobeAgentRuntimeErrorType,
 } from '@/libs/agent-runtime';
+import { traceClient } from '@/libs/traces';
 import { ChatErrorType } from '@/types/fetch';
 import { ChatStreamPayload } from '@/types/openai/chat';
 import { getTracePayload } from '@/utils/trace';
@@ -58,9 +58,10 @@ export const POST = async (req: Request, { params }: { params: { provider: strin
     const payload = (await req.json()) as ChatStreamPayload;
 
     // create a trace to monitor the completion
-    const tracePayload = getTracePayload(req.headers.get(LOBE_CHAT_TRACE_HEADER));
+    const tracePayload = getTracePayload(req);
 
     const trace = traceClient.createTrace({
+      id: tracePayload?.traceId,
       input: payload.messages,
       metadata: { provider },
       name: tracePayload?.traceName,
@@ -72,9 +73,8 @@ export const POST = async (req: Request, { params }: { params: { provider: strin
     let startTime: Date;
     return await agentRuntime.chat(payload, {
       callback: {
-        experimental_onToolCall: async (toolCallPayload) => {
-          console.log('toolCallPayload:', toolCallPayload);
-          trace?.update({ tags: ['Function Call'] });
+        experimental_onToolCall: async () => {
+          trace?.update({ tags: [...(tracePayload?.tags || []), TraceTagType.ToolsCall] });
         },
         onCompletion: async (completion) => {
           const { messages, model, tools, ...parameters } = payload;
@@ -84,7 +84,7 @@ export const POST = async (req: Request, { params }: { params: { provider: strin
             metadata: { provider, tools },
             model,
             modelParameters: parameters as any,
-            name: `Chat Completion(${provider})`,
+            name: `Chat Completion (${provider})`,
             output: completion,
             startTime,
           });

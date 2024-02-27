@@ -16,6 +16,7 @@ class TraceClient {
     this._client = new Langfuse({
       baseUrl: LANGFUSE_HOST,
       publicKey: LANGFUSE_PUBLIC_KEY,
+      release: CURRENT_VERSION,
       secretKey: LANGFUSE_SECRET_KEY,
     });
   }
@@ -23,7 +24,6 @@ class TraceClient {
   createTrace(param: CreateLangfuseTraceBody) {
     return this._client?.trace({
       ...param,
-      release: CURRENT_VERSION,
     });
   }
 

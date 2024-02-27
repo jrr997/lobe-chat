@@ -3,7 +3,7 @@ import { produce } from 'immer';
 import { merge } from 'lodash-es';
 
 import { DEFAULT_AGENT_CONFIG } from '@/const/settings';
-import { LOBE_CHAT_TRACE_HEADER, TracePayload, TraceTagType } from '@/const/trace';
+import { TracePayload, TraceTagType } from '@/const/trace';
 import { ModelProvider } from '@/libs/agent-runtime';
 import { filesSelectors, useFileStore } from '@/store/file';
 import { useGlobalStore } from '@/store/global';
@@ -13,11 +13,10 @@ import { pluginSelectors, toolSelectors } from '@/store/tool/selectors';
 import { ChatMessage } from '@/types/message';
 import type { ChatStreamPayload, OpenAIChatMessage } from '@/types/openai/chat';
 import { UserMessageContentPart } from '@/types/openai/chat';
-import { fetchSSE, getMessageError } from '@/utils/fetch';
-import { createTracePayload } from '@/utils/trace';
+import { OnFinishHandler, fetchSSE, getMessageError } from '@/utils/fetch';
+import { createTraceHeader, getTraceId } from '@/utils/trace';
 
 import { createHeaderWithAuth } from './_auth';
-import { createHeaderWithOpenAI } from './_header';
 import { API_ENDPOINTS } from './_url';
 
 interface FetchOptions {
@@ -35,7 +34,7 @@ interface FetchAITaskResultParams {
    * 错误处理函数
    */
   onError?: (e: Error, rawError?: any) => void;
-  onFinish?: (text: string) => Promise<void>;
+  onFinish?: OnFinishHandler;
   /**
    * 加载状态变化处理函数
    * @param loading - 是否处于加载状态
@@ -106,16 +105,15 @@ class ChatService {
       res,
     );
 
-    const traceHeader = createTracePayload({
+    const traceHeader = createTraceHeader({
       ...trace,
-      tags: [TraceTagType.UserChat],
       userId: useGlobalStore.getState().userId,
     });
 
     const headers = await createHeaderWithAuth({
       headers: {
         'Content-Type': 'application/json',
-        [LOBE_CHAT_TRACE_HEADER]: traceHeader,
+        ...traceHeader,
       },
       provider,
     });
@@ -141,10 +139,22 @@ class ChatService {
 
     const gatewayURL = manifest?.gateway;
 
+    const traceHeader = createTraceHeader({
+      ...options?.trace,
+      tags: [TraceTagType.ToolCalling],
+      userId: useGlobalStore.getState().userId,
+    });
+
+    const headers = await createHeaderWithAuth({
+      headers: {
+        ...createHeadersWithPluginSettings(settings),
+        ...traceHeader,
+      },
+    });
+
     const res = await fetch(gatewayURL ?? API_ENDPOINTS.gateway, {
       body: JSON.stringify({ ...params, manifest }),
-      // TODO: we can have a better auth way
-      headers: createHeadersWithPluginSettings(settings, createHeaderWithOpenAI()),
+      headers,
       method: 'POST',
       signal: options?.signal,
     });
@@ -153,7 +163,8 @@ class ChatService {
       throw await getMessageError(res);
     }
 
-    return await res.text();
+    const text = await res.text();
+    return { text, traceId: getTraceId(res) };
   };
 
   fetchPresetTaskResult = async ({

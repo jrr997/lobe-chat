@@ -136,7 +136,18 @@ export const chatPlugin: StateCreator<
 
     try {
       const abortController = toggleChatLoading(true, id, n('fetchPlugin') as string);
-      data = await chatService.runPluginApi(payload, { signal: abortController?.signal });
+      const message = chatSelectors.getMessageById(id)(get());
+
+      const res = await chatService.runPluginApi(payload, {
+        signal: abortController?.signal,
+        trace: { traceId: message?.traceId },
+      });
+      data = res.text;
+
+      // save traceId
+      if (res.traceId) {
+        await messageService.updateMessage(id, { traceId: res.traceId });
+      }
     } catch (error) {
       const err = error as Error;
 

@@ -6,7 +6,7 @@ import useSWR, { SWRResponse, mutate } from 'swr';
 import { StateCreator } from 'zustand/vanilla';
 
 import { LOADING_FLAT, isFunctionMessageAtStart, testFunctionMessageAtEnd } from '@/const/message';
-import { TraceNameMap } from '@/const/trace';
+import { TraceNameMap, TraceTagType } from '@/const/trace';
 import { CreateMessageParams } from '@/database/models/message';
 import { chatService } from '@/services/chat';
 import { messageService } from '@/services/message';
@@ -70,6 +70,7 @@ export interface ChatMessageAction {
     functionCallAtEnd: boolean;
     functionCallContent: string;
     isFunctionCall: boolean;
+    traceId?: string;
   }>;
   toggleChatLoading: (
     loading: boolean,
@@ -273,7 +274,7 @@ export const chatMessage: StateCreator<
     await refreshMessages();
 
     // 2. fetch the AI response
-    const { isFunctionCall, content, functionCallAtEnd, functionCallContent } =
+    const { isFunctionCall, content, functionCallAtEnd, functionCallContent, traceId } =
       await fetchAIChatMessage(messages, mid);
 
     // 3. if it's the function call message, trigger the function method
@@ -295,6 +296,7 @@ export const chatMessage: StateCreator<
           parentId: userMessageId,
           sessionId: get().activeId,
           topicId: activeTopicId,
+          traceId,
         };
 
         functionId = await messageService.create(functionMessage);
@@ -374,6 +376,13 @@ export const chatMessage: StateCreator<
         config.params.max_tokens = 2048;
     }
 
+    // get latest assistant or function message to check if they have traceId
+    // and use this id to trace whole the conversation
+    const latestAssistantMessage = preprocessMsgs
+      .filter((m) => ['assistant', 'function'].includes(m.role))
+      .at(-1);
+    const traceId = latestAssistantMessage?.traceId;
+
     const fetcher = () =>
       chatService.createAssistantMessage(
         {
@@ -386,9 +395,11 @@ export const chatMessage: StateCreator<
         {
           signal: abortController?.signal,
           trace: {
+            traceId,
             sessionId: get().activeId,
             topicId: get().activeTopicId,
-            traceName: TraceNameMap.UserChat,
+            traceName: TraceNameMap.Conversation,
+            tags: [TraceTagType.Chat],
           },
         },
       );
@@ -401,6 +412,7 @@ export const chatMessage: StateCreator<
     const { startAnimation, stopAnimation, outputQueue, isAnimationActive } =
       createSmoothMessage(assistantId);
 
+    let msgTraceId: string | undefined;
     await fetchSSE(fetcher, {
       onErrorHandle: async (error) => {
         await messageService.updateMessageError(assistantId, error);
@@ -409,8 +421,13 @@ export const chatMessage: StateCreator<
       onAbort: async () => {
         stopAnimation();
       },
-      onFinish: async (content) => {
+      onFinish: async ({ text: content, traceId }) => {
         stopAnimation();
+        // if there is traceId, update it
+        if (traceId) {
+          msgTraceId = traceId;
+          await messageService.updateMessage(assistantId, { traceId });
+        }
 
         // if there is still content not displayed,
         // and the message is not a function call
@@ -460,7 +477,13 @@ export const chatMessage: StateCreator<
       }
     }
 
-    return { content: output, functionCallAtEnd, functionCallContent, isFunctionCall };
+    return {
+      content: output,
+      functionCallAtEnd,
+      functionCallContent,
+      isFunctionCall,
+      traceId: msgTraceId,
+    };
   },
   toggleChatLoading: (loading, id, action) => {
     if (loading) {

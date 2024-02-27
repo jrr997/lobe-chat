@@ -1,5 +1,6 @@
 import { t } from 'i18next';
 
+import { LOBE_CHAT_TRACE_ID } from '@/const/trace';
 import { ErrorResponse, ErrorType } from '@/types/fetch';
 import { ChatMessageError } from '@/types/message';
 
@@ -27,10 +28,16 @@ export const getMessageError = async (response: Response) => {
 
 type SSEFinishType = 'done' | 'error' | 'abort';
 
+export type OnFinishHandler = (data: {
+  text: string;
+  traceId?: string | null;
+  type?: SSEFinishType;
+}) => Promise<void>;
+
 export interface FetchSSEOptions {
   onAbort?: (text: string) => Promise<void>;
   onErrorHandle?: (error: ChatMessageError) => void;
-  onFinish?: (text: string, type: SSEFinishType) => Promise<void>;
+  onFinish?: OnFinishHandler;
   onMessageHandle?: (text: string) => void;
 }
 
@@ -83,7 +90,8 @@ export const fetchSSE = async (fetchFn: () => Promise<Response>, options: FetchS
     }
   }
 
-  await options?.onFinish?.(output, finishedType);
+  const traceId = response.headers.get(LOBE_CHAT_TRACE_ID);
+  await options?.onFinish?.({ text: output, traceId, type: finishedType });
 
   return returnRes;
 };
@@ -94,7 +102,7 @@ interface FetchAITaskResultParams<T> {
    * 错误处理函数
    */
   onError?: (e: Error, rawError?: any) => void;
-  onFinish?: (text: string) => Promise<void>;
+  onFinish?: OnFinishHandler;
   /**
    * 加载状态变化处理函数
    * @param loading - 是否处于加载状态

@@ -3,14 +3,15 @@ export const LOBE_CHAT_TRACE_ID = 'X-chat-completion-trace-id';
 
 export enum TraceNameMap {
   ConnectivityChecker = 'Connectivity Checker',
+  Conversation = 'Conversation',
   EmojiPicker = 'Emoji Picker',
+  InvokePlugin = 'Invoke Plugin',
   LanguageDetect = 'Language Detect',
   SummaryAgentDescription = 'Summary Agent Description',
   SummaryAgentTags = 'Summary Agent Tags',
   SummaryAgentTitle = 'Summary Agent Title',
   SummaryTopicTitle = 'Summary Topic Title',
   Translator = 'Translator',
-  UserChat = 'User Chat',
 }
 
 export enum TraceTopicType {
@@ -18,8 +19,10 @@ export enum TraceTopicType {
 }
 
 export enum TraceTagType {
+  Chat = 'Chat Competition',
   SystemChain = 'System Chain',
-  UserChat = 'User Chat',
+  ToolCalling = 'Tool Calling',
+  ToolsCall = 'Tools Call',
 }
 
 export interface TracePayload {
@@ -32,6 +35,7 @@ export interface TracePayload {
    * chat topicId
    */
   topicId?: string;
+  traceId?: string;
   traceName?: TraceNameMap;
   /**
    * user uuid
