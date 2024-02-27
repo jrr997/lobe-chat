@@ -55,7 +55,7 @@ interface FetchAITaskResultParams {
 class ChatService {
   createAssistantMessage = async (
     { plugins: enabledPlugins, messages, ...params }: GetChatCompletionPayload,
-    { signal, trace }: FetchOptions = {},
+    options?: FetchOptions,
   ) => {
     const payload = merge(
       {
@@ -88,13 +88,10 @@ class ChatService {
 
     const tools = shouldUseTools ? filterTools : undefined;
 
-    return this.getChatCompletion({ ...params, messages: oaiMessages, tools }, { signal, trace });
+    return this.getChatCompletion({ ...params, messages: oaiMessages, tools }, options);
   };
 
-  getChatCompletion = async (
-    params: Partial<ChatStreamPayload>,
-    { trace, signal }: FetchOptions,
-  ) => {
+  getChatCompletion = async (params: Partial<ChatStreamPayload>, options?: FetchOptions) => {
     const { provider = ModelProvider.OpenAI, ...res } = params;
     const payload = merge(
       {
@@ -106,15 +103,12 @@ class ChatService {
     );
 
     const traceHeader = createTraceHeader({
-      ...trace,
+      ...options?.trace,
       userId: useGlobalStore.getState().userId,
     });
 
     const headers = await createHeaderWithAuth({
-      headers: {
-        'Content-Type': 'application/json',
-        ...traceHeader,
-      },
+      headers: { 'Content-Type': 'application/json', ...traceHeader },
       provider,
     });
 
@@ -122,7 +116,7 @@ class ChatService {
       body: JSON.stringify(payload),
       headers,
       method: 'POST',
-      signal,
+      signal: options?.signal,
     });
   };
 
