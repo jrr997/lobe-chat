@@ -4,13 +4,26 @@ import { CreateLangfuseTraceBody } from 'langfuse-core';
 import { getServerConfig } from '@/config/server';
 import { CURRENT_VERSION } from '@/const/version';
 
+/**
+ * We use langfuse as the tracing system to trace the request and response
+ */
 class TraceClient {
   private _client?: Langfuse;
 
   constructor() {
-    const { LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST } = getServerConfig();
+    const { ENABLE_LANGFUSE, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST } =
+      getServerConfig();
+
+    if (!ENABLE_LANGFUSE) return;
+
+    // when enabled langfuse, make sure the key are ready in envs
     if (!LANGFUSE_PUBLIC_KEY || !LANGFUSE_SECRET_KEY) {
-      return;
+      console.log('-----');
+      console.error(
+        "You are enabling langfuse but don't set the `LANGFUSE_PUBLIC_KEY` or `LANGFUSE_SECRET_KEY`. Please check your env",
+      );
+
+      throw new TypeError('NO_LANGFUSE_KEY_ERROR');
     }
 
     this._client = new Langfuse({

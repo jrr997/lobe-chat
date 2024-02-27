@@ -17,6 +17,7 @@ declare global {
 
       DEFAULT_AGENT_CONFIG?: string;
 
+      ENABLE_LANGFUSE?: string;
       LANGFUSE_PUBLIC_KEY?: string;
       LANGFUSE_SECRET_KEY?: string;
       LANGFUSE_HOST?: string;
@@ -62,6 +63,7 @@ export const getAppConfig = () => {
     AUTH0_ISSUER: process.env.AUTH0_ISSUER || '',
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || '',
 
+    ENABLE_LANGFUSE: process.env.ENABLE_LANGFUSE === '1',
     LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY || '',
     LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY || '',
     LANGFUSE_HOST: process.env.LANGFUSE_HOST || 'https://cloud.langfuse.com',
